@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<head>
+  <title>Widzenie Maszynowe Lukasz Strzalka</title>
+</head>
+<body>
+  <script src="https://d3js.org/d3.v3.min.js"></script>
+  <script src="./webgazer.js"></script>
+
+  <script>
+
+  const collisionSVG = "collisionSVG";
+  var force = [];
+  var nodes = [];
+
+  window.onload = function() {
+
+    var localstorageLabel = 'webgazerGlobalData';
+    window.localStorage.setItem(localstorageLabel, null);
+
+    webgazer.setRegression('ridge')
+    .setTracker('clmtrackr')
+    .begin()
+    .showPredictionPoints(false); 
+
+    function checkIfReady() {
+      var feedbackBox = document.getElementById( webgazer.params.faceFeedbackBoxId );
+      
+      if (!webgazer.isReady()) {
+        setTimeout(checkIfReady, 100);
+      }
+      else if( typeof(feedbackBox) == 'undefined' || feedbackBox == null ) {
+        setTimeout(checkIfReady, 100);
+      }
+      else
+      {
+        setupCollisionSystem();
+        webgazer.setGazeListener( collisionEyeListener );
+      }
+    }
+
+    setTimeout(checkIfReady,100);
+  };
+
+  window.onbeforeunload = function() {
+    window.localStorage.clear();
+  }
+
+  function setupCollisionSystem() {
+    var width = window.innerWidth;
+    var height = window.innerHeight;
+
+    var numberOfNodes = 200;
+
+    nodes = d3.range(numberOfNodes).map(function() { return {radius: Math.random() * 12 + 4}; }),
+    nodes[0].radius = 0;
+    nodes[0].fixed = true;
+
+    force = d3.layout.force()
+    .gravity(0.05)
+    .charge(function(d, i) { return i ? 0 : -2000; })
+    .nodes(nodes)
+    .size([width, height])
+    .start();
+
+    var svg = d3.select("body").append("svg")
+    .attr("id", collisionSVG)
+    .attr("width", width)
+    .attr("height", height)
+    .style("top", "0px")
+    .style("left","0px")
+    .style("margin","0px")
+    .style("position","absolute")
+    .style("z-index", 100000);
+
+    var color = d3.scale.category10();
+    var colors = [];
+    for(var i=0; i<numberOfNodes-2; i++){
+      colors[i] = "#74E0D4";
+    }
+    colors.push("#FA9028");
+
+    svg.selectAll("circle")
+    .data(nodes.slice(1))
+    .enter().append("circle")
+    .attr("r", function(d) { return d.radius; })
+    .style("fill", function(d, i) { return colors[i]; });
+
+
+    force.on("tick", function(e) {
+      var q = d3.geom.quadtree(nodes),
+      i = 0,
+      n = nodes.length;
+
+      while (++i < n) q.visit(collide(nodes[i]));
+
+      svg.selectAll("circle")
+      .attr("cx", function(d) { return d.x; })
+      .attr("cy", function(d) { return d.y; });
+    });
+
+    svg.append("ellipse")
+    .attr("id","predictionSquare")
+    .attr("rx",10)
+    .attr("ry",10)
+    .attr("fill","#FF0044");
+
+
+    svg.on("mousemove", function() {
+      var p1 = d3.mouse(this);
+      nodes[0].px = p1[0];
+      nodes[0].py = p1[1];
+      force.resume();
+    });
+
+    function collide(node) {
+      var r = node.radius + 16,
+      nx1 = node.x - r,
+      nx2 = node.x + r,
+      ny1 = node.y - r,
+      ny2 = node.y + r;
+      return function(quad, x1, y1, x2, y2) {
+        if (quad.point && (quad.point !== node)) {
+          var x = node.x - quad.point.x,
+          y = node.y - quad.point.y,
+          l = Math.sqrt(x * x + y * y),
+          r = node.radius + quad.point.radius;
+          if (l < r) {
+            l = (l - r) / l * .5;
+            node.x -= x *= l;
+            node.y -= y *= l;
+            quad.point.x += x;
+            quad.point.y += y;
+          }
+        }
+        return x1 > nx2 || x2 < nx1 || y1 > ny2 || y2 < ny1;
+      };
+    }
+  }
+
+  var collisionEyeListener = function(data, clock) {
+    if(!data)
+      return;
+    
+    nodes[0].px = data.x;
+    nodes[0].py = data.y;
+    force.resume();
+
+    var cl = webgazer.getTracker().clm;
+    var whr = webgazer.getVideoPreviewToCameraResolutionRatio();
+
+    var dot = d3.select("#predictionSquare")
+              .attr("cx",data.x)
+              .attr("cy",data.y);
+  }
+
+  </script>
+</body>
